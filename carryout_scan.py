@@ -22,7 +22,7 @@ carryout = serial.Serial(
 	stopbits = serial.STOPBITS_ONE,
 	bytesize = serial.EIGHTBITS,
 	timeout = 1)
-	
+
 print('Serial port connected')
 print('')
 
@@ -56,8 +56,8 @@ if (el_end := int(input('Ending Elevation in degrees (default 73): ') or 73) < 2
 if el_end > 73:
 	print('Elevation out of range, setting to 73')
 	el_end = 73
-	
-	
+
+
 #Configure SDR 
 sdr = RtlSdr()
 
@@ -80,7 +80,7 @@ if (user_gain := float(input('RF Gain (default 20.7, will be rounded to nearest 
 if user_gain > 49.6:
 	print('Gain above max for RTL-SDR, setting to 49.6')
 	user_gain = 49.6
-	
+
 sdr.sample_rate = MHZ #MHz higher sample rates causing delays?
 sdr.set_bandwidth(8000) #Narrow FM, MAKE THIS USER-SELECTABLE?
 sdr.center_freq = user_freq*MHZ # - 200e3 #MHz, with offset to avoid DC spike CHECK THIS
@@ -115,7 +115,7 @@ start_time = time.time() #record start time of scan
 #initialize starting dish position
 print('Moving dish to starting position...')
 carryout.write(bytes(b'q\r')) #go back to root menu in case unit's OS was left in a submenu
-carryout.write(bytes(b'\r')) 
+carryout.write(bytes(b'\r'))
 carryout.write(bytes(b'target\r')) #go to carryout targeting menu
 command = (f'g {az_start} {el_start}\r').encode("ascii")
 carryout.write(command) #send target to carryout unit
@@ -124,40 +124,36 @@ time.sleep(5) #wait for motors to reach starting position
 
 #SDR always seems to be delayed by 1/10th of Az range, because reasons????
 #Start reading from SDR "early" to avoid this. May not be the same on all machines.
-for i in range(0, round((az_range)/10)+1): 
+for _ in range(0, round((az_range)/10)+1):
 	samples = sdr.read_samples(256*1024) 	
-	
-#Main scanning loop
-direction = 1	
-for elevation in range(el_start,el_end+1):
-		sdr_bytes = sdr.read_bytes(256*1024) #avoid blank pixels at start(?)	
-		#valid azangle 0-360. Remember carryout increments cw. 
-		for azimuth in range (az_start,az_end):
-	
-			if (direction & 1 == 0):   #check for sweep direction
-				azimuth = abs(azimuth-az_end)+az_start-1   #increment backwards on odd numbered loops
-						
-			#Read RF signal from SDR
-			samples = sdr.read_samples(256*1024)
-			signal_strength = 10*log10(var(samples))
-			print(f'Relative power: {round(signal_strength, 2)} dB') 
-			
-			#record signal data to array
-			sky_data[abs(elevation-el_end),(azimuth-az_end)]=signal_strength
-			#write to text file
-			np.savetxt(f"raw-data-{timestr}.txt", sky_data)
-				
-			print(f'Azimuth: {azimuth}, Elevation: {elevation}')  #display current position
 
-			#Tell carryout dish to go to next target position
-			carryout.write(bytes(b'target\r'))
-			command = (f'g {azimuth} {elevation}\r').encode('ascii')
-			carryout.write(command)
-			carryout.write(bytes(b'q\r')) #go back to root menu
-	
-			#time.sleep(0.1) #Allow motors to catch up, reduce shaking. Not necessary if sample size large enough?
-			
-		direction += 1	
+for direction, elevation in enumerate(range(el_start,el_end+1), start=1):
+	sdr_bytes = sdr.read_bytes(256*1024) #avoid blank pixels at start(?)	
+	#valid azangle 0-360. Remember carryout increments cw. 
+	for azimuth in range (az_start,az_end):
+
+		if (direction & 1 == 0):   #check for sweep direction
+			azimuth = abs(azimuth-az_end)+az_start-1   #increment backwards on odd numbered loops
+
+		#Read RF signal from SDR
+		samples = sdr.read_samples(256*1024)
+		signal_strength = 10*log10(var(samples))
+		print(f'Relative power: {round(signal_strength, 2)} dB') 
+
+		#record signal data to array
+		sky_data[abs(elevation-el_end),(azimuth-az_end)]=signal_strength
+		#write to text file
+		np.savetxt(f"raw-data-{timestr}.txt", sky_data)
+
+		print(f'Azimuth: {azimuth}, Elevation: {elevation}')  #display current position
+
+		#Tell carryout dish to go to next target position
+		carryout.write(bytes(b'target\r'))
+		command = (f'g {azimuth} {elevation}\r').encode('ascii')
+		carryout.write(command)
+		carryout.write(bytes(b'q\r')) #go back to root menu
+
+		#time.sleep(0.1) #Allow motors to catch up, reduce shaking. Not necessary if sample size large enough?
 
 end_time = time.time() #record end time of scan
 print('')
